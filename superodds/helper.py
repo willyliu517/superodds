@@ -1,9 +1,8 @@
 import requests
-import pandas as pd
-import numpy as np
 import re
 import time
 import datetime
+import yaml
 from typing import Dict, List, Tuple
 from pathlib import Path
 
@@ -14,7 +13,7 @@ def load_yaml_file(path: str) -> Dict | List | None:
     
     with open(path, 'r') as stream:
         try:
-            config = yaml.load(stream)
+            config = yaml.safe_load(stream)
             return config
         except yaml.YAMLError as exc:
             print(exc)

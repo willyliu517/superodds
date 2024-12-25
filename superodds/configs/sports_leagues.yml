@@ -10,7 +10,7 @@ rugby:
 basketball:
     basketball_nba: 'NBA'
     basketball_nba_championship_winner: 'NBA Championship Winner'
-    basketball_nbl: 'NBL',
+    basketball_nbl: 'NBL'
     basketball_ncaab: 'NCAA Basketball'
     basketball_ncaab_championship_winner: "NCAAB Championship Winner"
     basketball_wncaab: "WNCAA Basketball"
