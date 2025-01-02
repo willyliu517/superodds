@@ -50,4 +50,16 @@ def compute_no_vig_probabilities(odds_team_1: int, odds_team_2: int) -> Tuple[fl
     no_vig_prob_team_2 = team_2_vig_incl_prob / (team_1_vig_incl_prob + team_2_vig_incl_prob)
         
     return (no_vig_prob_team_1, no_vig_prob_team_2)
+
+def compute_return_on_bet(odds: int) -> float: 
+    '''
+        computes how much a one unit bet would win if the returns hit 
+    '''
+
+    # negative odds imply that you are the favourite
+    if odds < 0: 
+        return 100 / abs(odds)
+    else:
+        return odds / 100
+
   

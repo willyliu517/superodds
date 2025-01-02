@@ -2,6 +2,8 @@ import requests
 import re
 import time
 import os
+import copy
+import pandas as pd
 import datetime
 from .helper import *
 from typing import Dict, List, Tuple, Union
@@ -69,7 +71,8 @@ class OddsAPI:
     def get_odds(self,
                  sport: str, 
                  event_id: str,
-                 market: Union[str, List[str]]) -> Union[Dict, None]: 
+                 market: Union[str, List[str]],
+                 save_odds = True) -> Union[Dict, None]: 
             if type(market) == list: 
                 market_string = ','.join(market)
             else: 
@@ -105,24 +108,74 @@ class OddsAPI:
                         for market_outcome in market_outcomes:
                             market_name = market_outcome['name']
                             market_description = market_outcome['description'] if 'description' in market_outcome else ''
+                            market_point_abs = abs(market_outcome['point']) if 'point' in market_outcome else ''
                             market_point = market_outcome['point'] if 'point' in market_outcome else ''
                             bet_spread_name = "_".join(map(str, [market_key, 
-                                                                 market_name, 
                                                                  market_description, 
-                                                                 market_point]))
+                                                                 market_point_abs]))
                             market_price = market_outcome['price']
                             if bet_spread_name not in odds_dict:
                                 odds_dict[bet_spread_name] = {}
-                                
-                                odds_dict[bet_spread_name]['outcome'] = {}
+                                odds_dict[bet_spread_name]['lines'] = {}
+                            market_name_for_dict = f'{market_name} {market_point}'
+                            if bookmaker_name not in odds_dict[bet_spread_name]['lines']:
+                                odds_dict[bet_spread_name]['lines'][bookmaker_name] = {}
                             odds_dict[bet_spread_name]['last_updated_at'] = updated_time
-                            odds_dict[bet_spread_name]['outcome'][bookmaker_name] = market_price
+                            odds_dict[bet_spread_name]['lines'][bookmaker_name][market_name_for_dict] = market_price
 
                 
                 self.api_tokens_left = odds_response.headers['x-requests-remaining']
                 self.api_tokens_used = odds_response.headers['x-requests-used']
 
+                self.latest_ran_odds = odds_dict
+                
                 return odds_dict
+
+    def compute_no_vig_odds(self,
+                            odds_dict: Dict,
+                           ) -> Dict:
+        prob_dict = copy.deepcopy(odds_dict)
+        for key, value in odds_dict.items():
+            for line_key, odds in value['lines'].items():
+                odds_items = list(odds.items())
+                odds_line_1 = odds_items[0][0]
+                odds_line_2 = odds_items[1][0]
+                odds_value_1 = odds_items[0][1]
+                odds_value_2 = odds_items[1][1]
+                odd_1, odd_2 = compute_no_vig_probabilities(odds_value_1, odds_value_2)
+                
+                prob_dict[key]['lines'][line_key][odds_line_1] = odd_1
+                prob_dict[key]['lines'][line_key][odds_line_2] = odd_2
+
+        self.latest_computed_no_vig_odds = prob_dict
+
+        return prob_dict
+        
+    def compute_expected_return(self,
+                                odds_dict: Dict,
+                                prob_dict: Dict
+                           ) -> Dict:
+        expected_return_dict = copy.deepcopy(odds_dict)
+        for key, value in odds_dict.items():
+            for line_key, odds in value['lines'].items():
+                odds_items = list(odds.items())
+                odds_line_1 = odds_items[0][0]
+                odds_line_2 = odds_items[1][0]
+                return_value_1 = compute_return_on_bet(odds_items[0][1])
+                return_value_2 = compute_return_on_bet(odds_items[1][1])
+
+                prob_1 = prob_dict[key]['lines'][line_key][odds_line_1] 
+                prob_2 = prob_dict[key]['lines'][line_key][odds_line_2]
+
+                ev_1 = prob_1 * return_value_1 - prob_2
+                ev_2 = prob_2 * return_value_2 - prob_1
+
+                expected_return_dict[key]['lines'][line_key][odds_line_1] = ev_1
+                expected_return_dict[key]['lines'][line_key][odds_line_2] = ev_2
+                
+        self.latest_expected_return = expected_return_dict
+
+        return expected_return_dict
             
         
         
