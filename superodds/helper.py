@@ -3,6 +3,7 @@ import re
 import time
 import datetime
 import yaml
+import math
 from typing import Dict, List, Tuple
 from pathlib import Path
 
@@ -62,4 +63,19 @@ def compute_return_on_bet(odds: int) -> float:
     else:
         return odds / 100
 
-  
+def compute_positive_ev_odds(novig_prob: float) -> int:
+    '''
+        computes the minumum betting threshold needed based on the novig prob for the bet to reach positive expected value
+    '''
+    break_even_return = (1- novig_prob) / novig_prob
+    if break_even_return < 1: 
+        return math.ceil(-1 * 100 / break_even_return)
+    else:
+        return math.ceil(break_even_return * 100)
+
+
+def determin_arbitrage_opps(odds1: int, odds2: int) -> bool: 
+    '''
+        determines whether the pair of odds provide an arbitrage opportunity 
+    '''
+    return compute_vig_implied_probability(odds1) + compute_vig_implied_probability(odds2) < 1

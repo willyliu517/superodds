@@ -1,5 +1,73 @@
-- us
-- us2
-- uk
-- eu
-- au
+us:
+    - betonlineag
+    - betmgm
+    - betrivers
+    - betus
+    - bovada
+    - williamhill_us
+    - draftkings
+    - fanduel
+    - lowvig
+    - mybookieag
+us2:
+    - ballybet
+    - betanysports
+    - betparx
+    - espnbet
+    - fliff
+    - hardrockbet
+    - windcreek
+uk: 
+    - sport888
+    - betfair_ex_uk
+    - betfair_sb_uk
+    - betvictor
+    - betway
+    - boylesports
+    - casumo
+    - coral
+    - grosvenor
+    - ladbrokes_uk
+    - leovegas
+    - livescorebet
+    - matchbook
+    - paddypower
+    - skybet
+    - smarkets
+    - unibet_uk
+    - virginbet
+    - williamhill
+eu:
+    - onexbet
+    - sport888
+    - betclic
+    - betanysports
+    - betfair_ex_eu
+    - betonlineag
+    - betsson
+    - betvictor
+    - coolbet
+    - everygame 
+    - gtbets
+    - marathonbet
+    - matchbook
+    - mybookieag
+    - nordicbet
+    - pinnacle
+    - Suprabets
+    - Tipico
+    - unibet_eu 
+    - williamhill
+au:
+    - betfair_ex_au
+    - betr_au
+    - betright
+    - ladbrokes_au
+    - neds
+    - playup
+    - pointsbetau
+    - sportsbet
+    - tab
+    - tabtouch
+    - topsport
+    - unibet

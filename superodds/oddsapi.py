@@ -37,6 +37,7 @@ class OddsAPI:
         self.region = REGIONS
         self.league_config =  load_yaml_file(current_dir / 'configs/sports_leagues.yml')
         self.betting_markets = load_yaml_file(current_dir / 'configs/odds_api_markets.yml')
+        self.region_books = load_yaml_file(current_dir / 'configs/market_regions.yml')
         
     def get_upcoming_matches(self,
                              sport: str,
@@ -64,10 +65,22 @@ class OddsAPI:
                 games_dict[game_id]['commence_time'] = item['commence_time']
                 games_dict[game_id]['home_team'] = item['home_team']
                 games_dict[game_id]['away_team'] = item['away_team']
-                
+
             self.api_tokens_left = odds_response.headers['x-requests-remaining']
             self.api_tokens_used = odds_response.headers['x-requests-used']
             return games_dict
+
+    def organize_pairs(self,
+                       lines_dict: Dict) -> Dict:
+        # Split the dictionary into keys and sort by team and point spread
+        sorted_keys = sorted(lines_dict.keys(), key=lambda x: (x.split(' ')[-1], x.split(' ')[0]))
+        sorted_keys[1], sorted_keys[3] = sorted_keys[3], sorted_keys[1]
+        print(sorted_keys)
+        
+        # Create a new dictionary to store the ordered pairs
+        organized_dict = {key: lines_dict[key] for key in sorted_keys}
+        return organized_dict
+    
     def get_odds(self,
                  sport: str, 
                  event_id: str,
@@ -122,62 +135,89 @@ class OddsAPI:
                                 odds_dict[bet_spread_name]['lines'][bookmaker_name] = {}
                             odds_dict[bet_spread_name]['last_updated_at'] = updated_time
                             odds_dict[bet_spread_name]['lines'][bookmaker_name][market_name_for_dict] = market_price
+                            if len(odds_dict[bet_spread_name]['lines'][bookmaker_name]) > 3: 
+                                odds_dict[bet_spread_name]['lines'][bookmaker_name] = self.organize_pairs(odds_dict[bet_spread_name]['lines'][bookmaker_name])
 
-                
                 self.api_tokens_left = odds_response.headers['x-requests-remaining']
                 self.api_tokens_used = odds_response.headers['x-requests-used']
 
+                self.latest_ran_home_team = home_team
+                self.latest_ran_away_team = away_team
+                self.latest_ran_event_id = event_id
+                self.latest_ran_commence_time = commence_time
                 self.latest_ran_odds = odds_dict
                 
                 return odds_dict
-
-    def compute_no_vig_odds(self,
-                            odds_dict: Dict,
-                           ) -> Dict:
-        prob_dict = copy.deepcopy(odds_dict)
-        for key, value in odds_dict.items():
-            for line_key, odds in value['lines'].items():
-                odds_items = list(odds.items())
-                odds_line_1 = odds_items[0][0]
-                odds_line_2 = odds_items[1][0]
-                odds_value_1 = odds_items[0][1]
-                odds_value_2 = odds_items[1][1]
-                odd_1, odd_2 = compute_no_vig_probabilities(odds_value_1, odds_value_2)
-                
-                prob_dict[key]['lines'][line_key][odds_line_1] = odd_1
-                prob_dict[key]['lines'][line_key][odds_line_2] = odd_2
-
-        self.latest_computed_no_vig_odds = prob_dict
-
-        return prob_dict
-        
-    def compute_expected_return(self,
-                                odds_dict: Dict,
-                                prob_dict: Dict
-                           ) -> Dict:
-        expected_return_dict = copy.deepcopy(odds_dict)
-        for key, value in odds_dict.items():
-            for line_key, odds in value['lines'].items():
-                odds_items = list(odds.items())
-                odds_line_1 = odds_items[0][0]
-                odds_line_2 = odds_items[1][0]
-                return_value_1 = compute_return_on_bet(odds_items[0][1])
-                return_value_2 = compute_return_on_bet(odds_items[1][1])
-
-                prob_1 = prob_dict[key]['lines'][line_key][odds_line_1] 
-                prob_2 = prob_dict[key]['lines'][line_key][odds_line_2]
-
-                ev_1 = prob_1 * return_value_1 - prob_2
-                ev_2 = prob_2 * return_value_2 - prob_1
-
-                expected_return_dict[key]['lines'][line_key][odds_line_1] = ev_1
-                expected_return_dict[key]['lines'][line_key][odds_line_2] = ev_2
-                
-        self.latest_expected_return = expected_return_dict
-
-        return expected_return_dict
             
+    def output_odds_csv(self,
+                        odds_dict: Dict,
+                       ) -> pd.DataFrame:
         
+        default_column_set = ['event_id','home_team' , 'away_team', 'sportbook', 'event',
+                              'event_type', 'event_date', 'last_updated_at', 'odds',
+                              'no_vig_prob']
+
+        info_columns = ['event_id', 'home_team', 'away_team', 
+                        'event', 'event_type', 'event_date',
+                        'last_updated_at']
+        
+        rows = []
+        for key, value in odds_dict.items():
+            last_updated = value['last_updated_at']
+            for sportsbook, odds in value['lines'].items():
+                bet_counter = 0
+                for bet_type, odd in odds.items():
+                    row = {
+                        'event_id': self.latest_ran_event_id,
+                        'home_team': self.latest_ran_home_team,
+                        'away_team': self.latest_ran_away_team,
+                        'sportbook': sportsbook,
+                        'event': key,
+                        'event_type': bet_type, 
+                        'event_date': self.latest_ran_commence_time,
+                        'last_updated_at': last_updated,
+                        'odds': odd,
+                        'no_vig_prob': None
+                    }
+                    if bet_counter == 0: 
+                        stored_odd = odd
+                        rows.append(row)
+                    else:
+                        odd_1, odd_2 = compute_no_vig_probabilities(stored_odd, odd)
+                        prior_row = rows.pop()
+
+                        prior_row['no_vig_prob'] = odd_1
+                        row['no_vig_prob'] = odd_2
+                    
+                        rows.append(prior_row)
+                        rows.append(row)
+                        
+                        bet_counter = -1 
+
+                    bet_counter+=1
+                    
+                                    
+        odds_df = pd.DataFrame(columns = default_column_set, data = rows)
+
+        odds_df = odds_df.pivot_table(
+            index=['event_id', 'home_team', 'away_team', 'event', 'event_type', 
+                   'event_date', 'last_updated_at'],
+            columns= 'sportbook',
+            values=["odds", "no_vig_prob"]).reset_index()
+        
+        odds_df['avg_odds'] =  odds_df['odds'].mean(axis = 1)
+        odds_df['best_odds'] = odds_df['odds'].max(axis = 1)
+        odds_df['avg_no_vig_odds'] = odds_df['no_vig_prob'].mean(axis = 1 )
+        odds_df['num_sportsbooks'] = odds_df['odds'].notnull().sum(axis = 1)
+
+        odds_df = odds_df.drop('no_vig_prob', axis = 1)
+        
+        odds_df.columns = odds_df.columns.map(lambda x: f"{x[1]}" if x[1] else x[0])
+
+        odds_df['min_odds_needed_positive_ev'] = odds_df['avg_no_vig_odds'].apply(compute_positive_ev_odds)
+        self.latest_ran_df = odds_df
+        
+        return odds_df
         
 
         
