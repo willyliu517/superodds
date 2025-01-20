@@ -75,7 +75,6 @@ class OddsAPI:
         # Split the dictionary into keys and sort by team and point spread
         sorted_keys = sorted(lines_dict.keys(), key=lambda x: (x.split(' ')[-1], x.split(' ')[0]))
         sorted_keys[1], sorted_keys[3] = sorted_keys[3], sorted_keys[1]
-        print(sorted_keys)
         
         # Create a new dictionary to store the ordered pairs
         organized_dict = {key: lines_dict[key] for key in sorted_keys}
@@ -154,12 +153,12 @@ class OddsAPI:
                        ) -> pd.DataFrame:
         
         default_column_set = ['event_id','home_team' , 'away_team', 'sportbook', 'event',
-                              'event_type', 'event_date', 'last_updated_at', 'odds',
-                              'no_vig_prob']
+                              'event_type_counterpart', 'event_type', 'event_date',
+                              'last_updated_at', 'odds', 'no_vig_prob']
 
-        info_columns = ['event_id', 'home_team', 'away_team', 
-                        'event', 'event_type', 'event_date',
-                        'last_updated_at']
+        info_columns = ['index','event_id', 'home_team', 'away_team', 
+                        'event', 'event_type', 'event_date', 
+                        'event_type_counterpart', 'last_updated_at']
         
         rows = []
         for key, value in odds_dict.items():
@@ -174,19 +173,23 @@ class OddsAPI:
                         'sportbook': sportsbook,
                         'event': key,
                         'event_type': bet_type, 
+                        'event_type_counterpart': None,
                         'event_date': self.latest_ran_commence_time,
                         'last_updated_at': last_updated,
                         'odds': odd,
                         'no_vig_prob': None
                     }
                     if bet_counter == 0: 
+                        stored_bet_type = bet_type
                         stored_odd = odd
                         rows.append(row)
                     else:
                         odd_1, odd_2 = compute_no_vig_probabilities(stored_odd, odd)
                         prior_row = rows.pop()
-
+                        prior_row['event_type_counterpart'] = bet_type
                         prior_row['no_vig_prob'] = odd_1
+
+                        row['event_type_counterpart'] = stored_bet_type
                         row['no_vig_prob'] = odd_2
                     
                         rows.append(prior_row)
@@ -196,17 +199,19 @@ class OddsAPI:
 
                     bet_counter+=1
                     
+                    
                                     
         odds_df = pd.DataFrame(columns = default_column_set, data = rows)
 
         odds_df = odds_df.pivot_table(
             index=['event_id', 'home_team', 'away_team', 'event', 'event_type', 
-                   'event_date', 'last_updated_at'],
+                   'event_type_counterpart', 'event_date', 'last_updated_at'],
             columns= 'sportbook',
             values=["odds", "no_vig_prob"]).reset_index()
         
         odds_df['avg_odds'] =  odds_df['odds'].mean(axis = 1)
         odds_df['best_odds'] = odds_df['odds'].max(axis = 1)
+        odds_df['sportsbook_w_best_odds'] = odds_df['odds'].idxmax(axis = 1)
         odds_df['avg_no_vig_odds'] = odds_df['no_vig_prob'].mean(axis = 1 )
         odds_df['num_sportsbooks'] = odds_df['odds'].notnull().sum(axis = 1)
 
@@ -215,9 +220,36 @@ class OddsAPI:
         odds_df.columns = odds_df.columns.map(lambda x: f"{x[1]}" if x[1] else x[0])
 
         odds_df['min_odds_needed_positive_ev'] = odds_df['avg_no_vig_odds'].apply(compute_positive_ev_odds)
+
+        odds_df['ev_pct']= odds_df.apply(lambda x: compute_expected_return(x['best_odds'], x['avg_no_vig_odds']), 
+                                         axis = 1)
         self.latest_ran_df = odds_df
-        
+
         return odds_df
+
+     def compute_arbitrage_opps(self, odds_df: pandas.DataFrame) ->  pandas.DataFrame:
+         counterpart_odds = odds_df.copy()
+         counterpart_odds = counterpart_odds[['event','event_type', 'best_odds',
+                                              'sportsbook_w_best_odds']].rename(columns = {'event_type': 'event_type_counterpart', 
+                                                                                           'best_odds': 'counterpart_event_best_odds',
+                                                                                           'sportsbook_w_best_odds': 'counterpart_sportsbook_w_best_odds'})
+        
+        odds_df = odds_df.set_index(['event', 
+                                     'event_type_counterpart']).join(counterpart_odds.set_index(['event', 
+                                                                                                 'event_type_counterpart']), how = 'left').reset_index()
+
+
+        odds_df['arbitrage_ind'] =  odds_df[['best_odds','counterpart_event_best_odds']].apply(lambda x: determin_arbitrage_opps(x['best_odds'], 
+                                                                                                                                 x['counterpart_event_best_odds']),
+                                                                                               axis = 1)
+        self.latest_ran_df = odds_df
+        return odds_df
+
+        
+
+
+         
+
         
 
         

@@ -79,3 +79,44 @@ def determin_arbitrage_opps(odds1: int, odds2: int) -> bool:
         determines whether the pair of odds provide an arbitrage opportunity 
     '''
     return compute_vig_implied_probability(odds1) + compute_vig_implied_probability(odds2) < 1
+
+def compute_expected_return(odds: int, novig_prob: float) -> float: 
+    '''
+        given the implied no vig probability and corresponding odds compute the expected return from the bet 
+    '''
+
+    if odds < 0: 
+        return 100 / abs(odds) * novig_prob - (1- novig_prob)
+    else:
+        return odds / 100 * novig_prob - (1- novig_prob)
+
+def compute_arbitrage_optimization(odd1: int, odd2: int) -> float:
+    '''
+        computes the amount to distribute between two bets if an arbitrage opportunity exists 
+        assuming betting with a single unit
+    '''
+
+    dec_odd1 = 1 + compute_return_on_bet(odd1) 
+    dec_odd2 = 1 + compute_return_on_bet(odd2) 
+    return 1 / (dec_odd1 / dec_odd2 + 1)
+
+def compute_arbitrage_optimization(odd1: int, odd2: int) -> float:
+    '''
+        computes the amount to distribute between two bets if an arbitrage opportunity exists 
+        assuming betting with a single unit
+    '''
+
+    dec_odd1 = 1 + compute_return_on_bet(odd1) 
+    dec_odd2 = 1 + compute_return_on_bet(odd2) 
+    return 1 / (dec_odd1 / dec_odd2 + 1)
+
+def compute_arbitrage_profit(odd1: int, odd1_allocation: float, odd2: int, odd2_allocation: float) -> Tuple[float, float]:
+    '''
+        computes the range of profit in an arbitrage opportunity 
+    '''
+
+    return_odd1 = compute_return_on_bet(odd1) 
+    return_odd2 = compute_return_on_bet(odd2) 
+    
+    profit = return_odd1 * odd1_allocation - odd2_allocation
+    return profit
