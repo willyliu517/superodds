@@ -1,0 +1,25 @@
+american_football:
+    - feature_market_spreads
+    - additional_markets
+    - game_period_markets_basketball_football
+    - american_football_player_props
+    - alternative_football_player_props
+nba_basketball:
+    - feature_market_spreads
+    - additional_markets
+    - game_period_markets_basketball_football
+    - basketball_player_props
+    - alternative_basketball_player_props
+hockey:
+    - feature_market_spreads
+    - additional_markets
+    - game_period_markets_hockey
+    - hockey_player_props
+    - alternative_hockey_player_props
+baseball:
+    - feature_market_spreads
+    - additional_markets
+    - game_period_markets_baseball
+    - baseball_player_props
+    - alternative_baseball_player_props
+    

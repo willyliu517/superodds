@@ -4,6 +4,7 @@ import time
 import datetime
 import yaml
 import math
+import numpy as np
 from typing import Dict, List, Tuple
 from pathlib import Path
 
@@ -67,6 +68,8 @@ def compute_positive_ev_odds(novig_prob: float) -> int:
     '''
         computes the minumum betting threshold needed based on the novig prob for the bet to reach positive expected value
     '''
+    if novig_prob == 0:
+        return np.NaN
     break_even_return = (1- novig_prob) / novig_prob
     if break_even_return < 1: 
         return math.ceil(-1 * 100 / break_even_return)

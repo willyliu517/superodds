@@ -203,6 +203,9 @@ class OddsAPI:
                                     
         odds_df = pd.DataFrame(columns = default_column_set, data = rows)
 
+        odds_df['event_type_counterpart'] = odds_df['event_type_counterpart'].fillna('Not Available')
+        odds_df['no_vig_prob'] = odds_df['no_vig_prob'].fillna(0)
+
         odds_df = odds_df.pivot_table(
             index=['event_id', 'home_team', 'away_team', 'event', 'event_type', 
                    'event_type_counterpart', 'event_date', 'last_updated_at'],
@@ -227,9 +230,9 @@ class OddsAPI:
 
         return odds_df
 
-     def compute_arbitrage_opps(self, odds_df: pandas.DataFrame) ->  pandas.DataFrame:
-         counterpart_odds = odds_df.copy()
-         counterpart_odds = counterpart_odds[['event','event_type', 'best_odds',
+    def compute_arbitrage_opps(self, odds_df: pd.DataFrame) ->  pd.DataFrame:
+        counterpart_odds = odds_df.copy()
+        counterpart_odds = counterpart_odds[['event','event_type', 'best_odds',
                                               'sportsbook_w_best_odds']].rename(columns = {'event_type': 'event_type_counterpart', 
                                                                                            'best_odds': 'counterpart_event_best_odds',
                                                                                            'sportsbook_w_best_odds': 'counterpart_sportsbook_w_best_odds'})
@@ -244,6 +247,38 @@ class OddsAPI:
                                                                                                axis = 1)
         self.latest_ran_df = odds_df
         return odds_df
+
+    def get_all_positive_ev_arbitrage_opps(self, 
+                                           event_id: str, 
+                                           sport: str, 
+                                           props: List[str]) -> Union[None, 
+                                                                      pd.DataFrame, 
+                                                                      Tuple[pd.DataFrame, pd.DataFrame]]:
+
+        odds_collection = self.get_odds(
+            sport = sport, 
+            event_id = event_id,
+            market = props
+        )
+        
+        odds_dataframe = self.output_odds_csv(odds_collection)
+        odds_dataframe = self.compute_arbitrage_opps(odds_dataframe)
+
+        positive_ev = odds_dataframe[odds_dataframe.ev_pct > 0]
+        arb_df = odds_dataframe[odds_dataframe.arbitrage_ind == 1]
+        # If no Positive EV opps are found, no arbitrage will be found 
+        if positive_ev.shape[0] == 0:
+            print(f'No positive EV opportunities identified for event {event_id}')
+            return None
+        elif arb_df.shape[0] == 0:
+            print(f'No arbitrage opportunities identified for event {event_id}')
+            return positive_ev
+        else:
+            return positive_ev, arb_df
+            
+        
+        
+                        
 
         
 
