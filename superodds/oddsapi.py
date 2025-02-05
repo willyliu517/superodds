@@ -247,7 +247,6 @@ class OddsAPI:
     def get_all_positive_ev_arbitrage_opps(self, 
                                            event_id: str, 
                                            sport: str, 
-                                           min_num_sports_books: int,
                                            props: List[str]) -> Union[None, 
                                                                       pd.DataFrame, 
                                                                       Tuple[pd.DataFrame, pd.DataFrame]]:
@@ -261,9 +260,8 @@ class OddsAPI:
         odds_dataframe = self.output_odds_csv(odds_collection)
         odds_dataframe = self.compute_arbitrage_opps(odds_dataframe)
 
-        positive_ev = odds_dataframe[(odds_dataframe.ev_pct > 0) &
-                                     (odds_dataframe.num_sportsbooks >= min_num_sports_books)
-        ]
+        positive_ev = odds_dataframe[(odds_dataframe.ev_pct > 0)]
+        
         arb_df = odds_dataframe[odds_dataframe.arbitrage_ind == True]
         # If no Positive EV opps are found, no arbitrage will be found 
         if positive_ev.shape[0] == 0:
