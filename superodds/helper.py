@@ -7,6 +7,7 @@ import math
 import numpy as np
 from typing import Dict, List, Tuple
 from pathlib import Path
+import re
 
 def load_yaml_file(path: str) -> Dict | List | None:
     '''
@@ -123,3 +124,34 @@ def compute_arbitrage_profit(odd1: int, odd1_allocation: float, odd2: int, odd2_
     
     profit = return_odd1 * odd1_allocation - odd2_allocation
     return profit
+
+def get_counter_event_name(event_type: str, 
+                           home_team: str, 
+                           away_team: str) -> str:
+    if event_type == 'No ':
+        return 'Yes '
+    elif event_type == 'Yes ':
+        return 'No '
+    elif event_type == home_team + ' ':
+        return away_team + ' '
+    elif event_type == away_team + ' ':
+        return home_team + ' '
+
+    # If the event is an Over/Under type
+    match = re.match(r"(Over|Under) (\d+(\.\d+)?)", event_type, re.IGNORECASE)
+    if match:
+        line, value = match.group(1), match.group(2)
+        return f"{'Under' if line.lower() == 'over' else 'Over'} {value}"
+
+    # If the event is a spread bet (Team Name +/- Points)
+    pattern = r"(.+?)(?:\s+([+-]?\d+(?:\.\d+)?))?$"  
+    match = re.match(pattern, event_type)
+    if match:
+        team, spread = match.group(1), float(match.group(2))  # Extract team and spread value
+        counter_spread = -spread  # Flip the sign
+        
+        return f"{away_team if team == home_team else home_team} {counter_spread}"
+
+    # If no specific pattern is matched, return None
+    return None
+        

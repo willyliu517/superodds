@@ -38,6 +38,7 @@ class OddsAPI:
         self.league_config =  load_yaml_file(current_dir / 'configs/sports_leagues.yml')
         self.betting_markets = load_yaml_file(current_dir / 'configs/odds_api_markets.yml')
         self.region_books = load_yaml_file(current_dir / 'configs/market_regions.yml')
+        self.odds_set = load_yaml_file(current_dir / 'configs/odds_set.yml')
         
     def get_upcoming_matches(self,
                              sport: str,
@@ -68,6 +69,7 @@ class OddsAPI:
 
             self.api_tokens_left = odds_response.headers['x-requests-remaining']
             self.api_tokens_used = odds_response.headers['x-requests-used']
+            self.latest_ran_game_dict = games_dict
             return games_dict
 
     def organize_pairs(self,
@@ -160,12 +162,17 @@ class OddsAPI:
                         'event', 'event_type', 'event_date', 
                         'event_type_counterpart', 'last_updated_at']
         
-        rows = []
+        agg_dict = {}
         for key, value in odds_dict.items():
             last_updated = value['last_updated_at']
             for sportsbook, odds in value['lines'].items():
                 bet_counter = 0
                 for bet_type, odd in odds.items():
+                    counter_event = get_counter_event_name(bet_type, 
+                                                           home_team = self.latest_ran_home_team, 
+                                                           away_team = self.latest_ran_away_team)
+                    event_unique_id = f'{self.latest_ran_event_id}_{sportsbook}_{key}_{bet_type}_{last_updated}'
+                    counter_event_unique_id = f'{self.latest_ran_event_id}_{sportsbook}_{key}_{counter_event}_{last_updated}'
                     row = {
                         'event_id': self.latest_ran_event_id,
                         'home_team': self.latest_ran_home_team,
@@ -173,36 +180,25 @@ class OddsAPI:
                         'sportbook': sportsbook,
                         'event': key,
                         'event_type': bet_type, 
-                        'event_type_counterpart': None,
+                        'event_type_counterpart': counter_event,
                         'event_date': self.latest_ran_commence_time,
                         'last_updated_at': last_updated,
                         'odds': odd,
                         'no_vig_prob': None
                     }
-                    if bet_counter == 0: 
-                        stored_bet_type = bet_type
-                        stored_odd = odd
-                        rows.append(row)
-                    else:
-                        odd_1, odd_2 = compute_no_vig_probabilities(stored_odd, odd)
-                        prior_row = rows.pop()
-                        prior_row['event_type_counterpart'] = bet_type
-                        prior_row['no_vig_prob'] = odd_1
-
-                        row['event_type_counterpart'] = stored_bet_type
-                        row['no_vig_prob'] = odd_2
-                    
-                        rows.append(prior_row)
-                        rows.append(row)
+                    agg_dict[event_unique_id] = row
+                    if bet_counter > 0: 
+                        if counter_event_unique_id in agg_dict: 
+                            odd_1, odd_2 = compute_no_vig_probabilities(agg_dict[event_unique_id]['odds'],
+                                                                        agg_dict[counter_event_unique_id]['odds'])
+                            agg_dict[event_unique_id]['no_vig_prob'] = odd_1
+                            agg_dict[counter_event_unique_id]['no_vig_prob'] = odd_2
                         
-                        bet_counter = -1 
-
                     bet_counter+=1
                     
                     
                                     
-        odds_df = pd.DataFrame(columns = default_column_set, data = rows)
-
+        odds_df = pd.DataFrame.from_dict(agg_dict, orient='index').reset_index()
         odds_df['event_type_counterpart'] = odds_df['event_type_counterpart'].fillna('Not Available')
         odds_df['no_vig_prob'] = odds_df['no_vig_prob'].fillna(0)
 
@@ -251,6 +247,7 @@ class OddsAPI:
     def get_all_positive_ev_arbitrage_opps(self, 
                                            event_id: str, 
                                            sport: str, 
+                                           min_num_sports_books: int,
                                            props: List[str]) -> Union[None, 
                                                                       pd.DataFrame, 
                                                                       Tuple[pd.DataFrame, pd.DataFrame]]:
@@ -264,8 +261,10 @@ class OddsAPI:
         odds_dataframe = self.output_odds_csv(odds_collection)
         odds_dataframe = self.compute_arbitrage_opps(odds_dataframe)
 
-        positive_ev = odds_dataframe[odds_dataframe.ev_pct > 0]
-        arb_df = odds_dataframe[odds_dataframe.arbitrage_ind == 1]
+        positive_ev = odds_dataframe[(odds_dataframe.ev_pct > 0) &
+                                     (odds_dataframe.num_sportsbooks >= min_num_sports_books)
+        ]
+        arb_df = odds_dataframe[odds_dataframe.arbitrage_ind == True]
         # If no Positive EV opps are found, no arbitrage will be found 
         if positive_ev.shape[0] == 0:
             print(f'No positive EV opportunities identified for event {event_id}')
