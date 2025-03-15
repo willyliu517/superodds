@@ -40,6 +40,76 @@ class OddsAPI:
         self.region_books = load_yaml_file(current_dir / 'configs/market_regions.yml')
         self.odds_set = load_yaml_file(current_dir / 'configs/odds_set.yml')
         
+    def output_game_dict(self,
+                         odds_response: Dict,
+                         historical_ran_time = None
+                        ) -> Union[Dict, None]:
+        games_dict = {}
+        if not historical_ran_time:
+            historical_ran_time = datetime.datetime.now(datetime.timezone.utc)
+            # Convert to string in ISO 8601 format
+            dt_string = historical_ran_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        dt_string = historical_ran_time
+        for item in odds_response:
+            game_id = item['id']
+            games_dict[game_id] = {}
+            games_dict[game_id]['sport_key'] = item['sport_key']
+            games_dict[game_id]['sport_title'] = item['sport_title']
+            games_dict[game_id]['commence_time'] = item['commence_time']
+            games_dict[game_id]['home_team'] = item['home_team']
+            games_dict[game_id]['away_team'] = item['away_team']
+            games_dict[game_id]['ran_time'] = dt_string
+            
+        self.latest_ran_game_dict = games_dict
+        
+        return games_dict
+
+    def output_game_odds(self, 
+                         odds_response: Dict) -> Dict:
+        
+        odds_response_json = odds_response
+        game_id = odds_response_json['id']
+        sport_key = odds_response_json['sport_key']
+        commence_time = odds_response_json['commence_time']
+        home_team = odds_response_json['home_team']
+        away_team = odds_response_json['away_team']
+        bookmakers = odds_response_json['bookmakers']
+        odds_dict = {}
+        for bookmaker in bookmakers:
+            bookmaker_name = bookmaker['key']
+            markets = bookmaker['markets']
+            for market in markets:
+                market_key = market['key']
+                updated_time = market['last_update']
+                market_outcomes = market['outcomes']
+                for market_outcome in market_outcomes:
+                    market_name = market_outcome['name']
+                    market_description = market_outcome['description'] if 'description' in market_outcome else ''
+                    market_point_abs = abs(market_outcome['point']) if 'point' in market_outcome else ''
+                    market_point = market_outcome['point'] if 'point' in market_outcome else ''
+                    bet_spread_name = "_".join(map(str, [market_key, 
+                                                         market_description, 
+                                                         market_point_abs]))
+                    market_price = market_outcome['price']
+                    if bet_spread_name not in odds_dict:
+                        odds_dict[bet_spread_name] = {}
+                        odds_dict[bet_spread_name]['lines'] = {}
+                    market_name_for_dict = f'{market_name} {market_point}'
+                    if bookmaker_name not in odds_dict[bet_spread_name]['lines']:
+                        odds_dict[bet_spread_name]['lines'][bookmaker_name] = {}
+                    odds_dict[bet_spread_name]['last_updated_at'] = updated_time
+                    odds_dict[bet_spread_name]['lines'][bookmaker_name][market_name_for_dict] = market_price
+                    if len(odds_dict[bet_spread_name]['lines'][bookmaker_name]) > 3: 
+                        odds_dict[bet_spread_name]['lines'][bookmaker_name] = self.organize_pairs(odds_dict[bet_spread_name]['lines'][bookmaker_name])
+
+        self.latest_ran_home_team = home_team
+        self.latest_ran_away_team = away_team
+        self.latest_ran_event_id = game_id
+        self.latest_ran_commence_time = commence_time
+        self.latest_ran_odds = odds_dict
+        
+        return odds_dict
+           
     def get_upcoming_matches(self,
                              sport: str,
                             ) -> Union[Dict, None]:
@@ -53,24 +123,30 @@ class OddsAPI:
                 'oddsFormat': self.odds_format,
                 'dateFormat': self.date_format,
             })
-
+        
         if odds_response.status_code != 200:
             print(f'Failed to get sports: status_code {odds_response.status_code}, response body {odds_response.text}')
         else: 
-            games_dict = {}
-            for item in odds_response.json():
-                game_id = item['id']
-                games_dict[game_id] = {}
-                games_dict[game_id]['sport_key'] = item['sport_key']
-                games_dict[game_id]['sport_title'] = item['sport_title']
-                games_dict[game_id]['commence_time'] = item['commence_time']
-                games_dict[game_id]['home_team'] = item['home_team']
-                games_dict[game_id]['away_team'] = item['away_team']
-
             self.api_tokens_left = odds_response.headers['x-requests-remaining']
             self.api_tokens_used = odds_response.headers['x-requests-used']
-            self.latest_ran_game_dict = games_dict
-            return games_dict
+            return self.output_game_dict(odds_response = odds_response.json())
+
+    def get_historical_matches(self,
+                             sport: str,
+                             date: str, 
+                             hour_of_day = '12:00:00'
+                            ) -> Union[Dict, None]:
+        historical_url_request = f'https://api.the-odds-api.com/v4/historical/sports/{sport}/odds?regions=us&oddsFormat=american&apiKey={self.api_key}&date={date}T{hour_of_day}Z'
+        odds_response = requests.get(historical_url_request)
+        
+        if odds_response.status_code != 200:
+            print(f'Failed to get sports: status_code {odds_response.status_code}, response body {odds_response.text}')
+        else: 
+            self.api_tokens_left = odds_response.headers['x-requests-remaining']
+            self.api_tokens_used = odds_response.headers['x-requests-used']
+            ran_time = f'{date}T{hour_of_day}Z'
+            self.latest_historical_ran_time = ran_time
+            return self.output_game_dict(odds_response.json()['data'], historical_ran_time = ran_time)
 
     def organize_pairs(self,
                        lines_dict: Dict) -> Dict:
@@ -85,8 +161,7 @@ class OddsAPI:
     def get_odds(self,
                  sport: str, 
                  event_id: str,
-                 market: Union[str, List[str]],
-                 save_odds = True) -> Union[Dict, None]: 
+                 market: Union[str, List[str]]) -> Union[Dict, None]: 
             if type(market) == list: 
                 market_string = ','.join(market)
             else: 
@@ -104,51 +179,41 @@ class OddsAPI:
             if odds_response.status_code != 200:
                 print(f'Failed to get sports: status_code {odds_response.status_code}, response body {odds_response.text}')
             else: 
-                odds_response_json = odds_response.json()
-                game_id = odds_response_json['id']
-                sport_key = odds_response_json['sport_key']
-                commence_time = odds_response_json['commence_time']
-                home_team = odds_response_json['home_team']
-                away_team = odds_response_json['away_team']
-                bookmakers = odds_response_json['bookmakers']
-                odds_dict = {}
-                for bookmaker in bookmakers:
-                    bookmaker_name = bookmaker['key']
-                    markets = bookmaker['markets']
-                    for market in markets:
-                        market_key = market['key']
-                        updated_time = market['last_update']
-                        market_outcomes = market['outcomes']
-                        for market_outcome in market_outcomes:
-                            market_name = market_outcome['name']
-                            market_description = market_outcome['description'] if 'description' in market_outcome else ''
-                            market_point_abs = abs(market_outcome['point']) if 'point' in market_outcome else ''
-                            market_point = market_outcome['point'] if 'point' in market_outcome else ''
-                            bet_spread_name = "_".join(map(str, [market_key, 
-                                                                 market_description, 
-                                                                 market_point_abs]))
-                            market_price = market_outcome['price']
-                            if bet_spread_name not in odds_dict:
-                                odds_dict[bet_spread_name] = {}
-                                odds_dict[bet_spread_name]['lines'] = {}
-                            market_name_for_dict = f'{market_name} {market_point}'
-                            if bookmaker_name not in odds_dict[bet_spread_name]['lines']:
-                                odds_dict[bet_spread_name]['lines'][bookmaker_name] = {}
-                            odds_dict[bet_spread_name]['last_updated_at'] = updated_time
-                            odds_dict[bet_spread_name]['lines'][bookmaker_name][market_name_for_dict] = market_price
-                            if len(odds_dict[bet_spread_name]['lines'][bookmaker_name]) > 3: 
-                                odds_dict[bet_spread_name]['lines'][bookmaker_name] = self.organize_pairs(odds_dict[bet_spread_name]['lines'][bookmaker_name])
-
                 self.api_tokens_left = odds_response.headers['x-requests-remaining']
                 self.api_tokens_used = odds_response.headers['x-requests-used']
-
-                self.latest_ran_home_team = home_team
-                self.latest_ran_away_team = away_team
-                self.latest_ran_event_id = event_id
-                self.latest_ran_commence_time = commence_time
-                self.latest_ran_odds = odds_dict
+                self.latest_ran_markets = market 
                 
-                return odds_dict
+                return self.output_game_odds(odds_response = odds_response.json())
+                
+    def get_historical_odds(self, 
+                        sport: str, 
+                        event_id: str,
+                        market: Union[str, List[str]],
+                        datestr: str) -> Union[Dict, None]: 
+        
+        if type(market) == list: 
+            market_string = ','.join(market)
+        else: 
+            market_string = market
+            
+        historical_url_request = f'https://api.the-odds-api.com/v4/historical/sports/{sport}/events/{event_id}/odds?apiKey={self.api_key}&date={datestr}&regions={self.region}&markets={market_string}'
+        odds_response = requests.get(
+                historical_url_request,
+                params={
+                    'oddsFormat': self.odds_format
+                })
+        if odds_response.status_code != 200:
+                print(f'Failed to get sports: status_code {odds_response.status_code}, response body {odds_response.text}')
+        else: 
+            self.historical_event_previous_timestamp = odds_response.json()['timestamp']
+            self.historical_event_recently_ran_timestamp = odds_response.json()['previous_timestamp']
+            self.historical_event_next_timestamp = odds_response.json()['next_timestamp']
+            self.latest_ran_markets = market 
+
+            self.api_tokens_left = odds_response.headers['x-requests-remaining']
+            self.api_tokens_used = odds_response.headers['x-requests-used']
+            
+            return self.output_game_odds(odds_response = odds_response.json()['data'])
             
     def output_odds_csv(self,
                         odds_dict: Dict,
@@ -196,8 +261,6 @@ class OddsAPI:
                         
                     bet_counter+=1
                     
-                    
-                                    
         odds_df = pd.DataFrame.from_dict(agg_dict, orient='index').reset_index()
         odds_df['event_type_counterpart'] = odds_df['event_type_counterpart'].fillna('Not Available')
         odds_df['no_vig_prob'] = odds_df['no_vig_prob'].fillna(0)
@@ -223,6 +286,7 @@ class OddsAPI:
         odds_df['ev_pct']= odds_df.apply(lambda x: compute_expected_return(x['best_odds'], x['avg_no_vig_odds']), 
                                          axis = 1)
         self.latest_ran_df = odds_df
+        self.latest_ran_timestamp = last_updated
 
         return odds_df
 
@@ -247,15 +311,27 @@ class OddsAPI:
     def get_all_positive_ev_arbitrage_opps(self, 
                                            event_id: str, 
                                            sport: str, 
-                                           props: List[str]) -> Union[None, 
+                                           market: List[str],
+                                           historical_event = False, 
+                                           timestamp = None) -> Union[None, 
                                                                       pd.DataFrame, 
                                                                       Tuple[pd.DataFrame, pd.DataFrame]]:
-
-        odds_collection = self.get_odds(
-            sport = sport, 
-            event_id = event_id,
-            market = props
-        )
+        
+        if historical_event:
+            if not timestamp: 
+                timestamp = self.latest_historical_ran_time
+            odds_collection = self.get_historical_odds(
+                sport = sport, 
+                event_id = event_id,
+                market = market,
+                datestr = timestamp
+            )
+        else: 
+            odds_collection = self.get_odds(
+                sport = sport, 
+                event_id = event_id,
+                market = market
+            )
         
         odds_dataframe = self.output_odds_csv(odds_collection)
         odds_dataframe = self.compute_arbitrage_opps(odds_dataframe)
@@ -272,6 +348,52 @@ class OddsAPI:
             return positive_ev
         else:
             return positive_ev, arb_df
+                
+    def get_all_odds(self,
+                     sport: str,
+                     market: List[str],
+                     historical_event = False, 
+                     date = None, 
+                     hour_of_day = None) -> pd.DataFrame:
+        df_list = []
+        if historical_event:
+            if not date: 
+                raise ValueError("`date` and `hour_of_day` must be provided pulling in historical events")
+                
+            historical_matches = self.get_historical_matches(
+                sport = sport,
+                date = date, 
+                hour_of_day = hour_of_day)
+            
+            for event_id in historical_matches.keys():
+                odds_collection = self.get_historical_odds(
+                    sport = sport, 
+                    event_id = event_id,
+                    market = market,
+                    datestr = self.latest_historical_ran_time
+                )
+                
+                output_df = self.output_odds_csv(odds_collection)
+                df_list.append(output_df)
+        else: 
+            
+            upcoming_matches = self.get_upcoming_matches(sport = sport)
+            
+            for event_id in upcoming_matches.keys():
+                odds_collection = self.get_odds(
+                        sport = sport, 
+                        event_id = event_id,
+                        market = market)
+                output_df = self.output_odds_csv(odds_collection)
+                df_list.append(output_df)
+        
+        result = pd.concat(df_list, ignore_index=True)
+        
+        self.result_df = result 
+        
+        return result
+                
+        
             
         
         
