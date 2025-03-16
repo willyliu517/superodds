@@ -14,6 +14,7 @@ ODDS_FORMAT = 'american' # decimal | american
 DATE_FORMAT = 'iso' # iso | unix
 SPORT = 'upcoming' # use the sport_key from the /sports endpoint below, or use 'upcoming' to see the next 8 games across all sports
 REGIONS = 'us,us2' # uk | us | us2 | eu | au Multiple can be specified if comma delimited
+home_dir = Path(os.path.expanduser("~"))
 current_dir = Path(os.path.dirname(__file__))
 
 class OddsAPI:
@@ -354,32 +355,56 @@ class OddsAPI:
                      market: List[str],
                      historical_event = False, 
                      date = None, 
-                     hour_of_day = None) -> pd.DataFrame:
+                     hour_of_day = None,
+                     get_event_prior_to_commence = False,
+                     custoff_date = None) -> Union[pd.DataFrame, None]:
         df_list = []
         if historical_event:
             if not date: 
                 raise ValueError("`date` and `hour_of_day` must be provided pulling in historical events")
-                
+
             historical_matches = self.get_historical_matches(
                 sport = sport,
                 date = date, 
                 hour_of_day = hour_of_day)
             
-            for event_id in historical_matches.keys():
-                odds_collection = self.get_historical_odds(
-                    sport = sport, 
-                    event_id = event_id,
-                    market = market,
-                    datestr = self.latest_historical_ran_time
-                )
+            for event_id, value in historical_matches.items():
+                commence_time = value['commence_time']
+                fmt = "%Y-%m-%dT%H:%M:%SZ"
+                commence_time = datetime.datetime.strptime(commence_time , fmt)
+                ran_time = datetime.datetime.strptime(self.latest_historical_ran_time, fmt)
+                if get_event_prior_to_commence:
+                    if ran_time <= commence_time and commence_time < custoff_date: 
+
+                        print(f'Collecting historical odds for {event_id} at {self.latest_historical_ran_time}')
+        
+                        odds_collection = self.get_historical_odds(
+                            sport = sport, 
+                            event_id = event_id,
+                            market = market,
+                            datestr = self.latest_historical_ran_time
+                        )
+                    
+                        output_df = self.output_odds_csv(odds_collection)
+                        df_list.append(output_df)
+                else: 
+                    print(f'Collecting historical odds for {event_id} at {self.latest_historical_ran_time}')
+        
+                    odds_collection = self.get_historical_odds(
+                        sport = sport, 
+                        event_id = event_id,
+                        market = market,
+                        datestr = self.latest_historical_ran_time
+                    )
                 
-                output_df = self.output_odds_csv(odds_collection)
-                df_list.append(output_df)
+                    output_df = self.output_odds_csv(odds_collection)
+                    df_list.append(output_df)
         else: 
             
             upcoming_matches = self.get_upcoming_matches(sport = sport)
             
             for event_id in upcoming_matches.keys():
+                print(f'Collecting odds for {event_id} at {self.latest_ran_timestamp}')
                 odds_collection = self.get_odds(
                         sport = sport, 
                         event_id = event_id,
@@ -387,12 +412,70 @@ class OddsAPI:
                 output_df = self.output_odds_csv(odds_collection)
                 df_list.append(output_df)
         
-        result = pd.concat(df_list, ignore_index=True)
+        if df_list: 
+            
+            result = pd.concat(df_list, ignore_index=True)
         
-        self.result_df = result 
+            self.result_df = result 
         
-        return result
-                
+            return result
+
+    def output_historical_events_across_timestamps(self,
+                                                sport: str,
+                                                market: List[str],
+                                                date = str, 
+                                                hour_of_day = '12:00:00',
+                                                interval_min = 60,
+                                                dir = home_dir
+                                               ) -> None:
+
+        fmt = "%Y-%m-%dT%H:%M:%SZ"
+        datetime_str = f'{date}T{hour_of_day}Z'
+        datetime_var = datetime.datetime.strptime(datetime_str , fmt)
+        output_dir = ensure_dir_exists(str(home_dir / sport /f'{sport}_{date}' ))
+
+        #Excludes events that occured after 8am UTC the next day
+        date_obj = datetime.datetime.strptime(date, "%Y-%m-%d")
+        next_day = date_obj + datetime.timedelta(days=1)
+        # Set time to 08:00 AM
+        next_day_at_8am = next_day.replace(hour=8, minute=0, second=0)
+        
+        historcal_df = self.get_all_odds(
+             sport = sport,
+             market = market,
+             historical_event = True, 
+             date = date, 
+             hour_of_day = hour_of_day,
+             get_event_prior_to_commence = True, 
+             custoff_date = next_day_at_8am 
+        )
+        
+        date_part = date 
+        while historcal_df is not None:
+            csv_name = f'{sport}_{date_part}_{datetime_str}.csv'
+            print(f'Saving {csv_name} to local')
+            historcal_df.to_csv(home_dir / sport / f'{sport}_{date}' / csv_name, index=False)
+            datetime_var = datetime_var + datetime.timedelta(minutes = interval_min) 
+            datetime_str = datetime_var.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            date_part, time_part = datetime_str.split("T")
+
+            # Remove the 'Z' from time
+            time_part = time_part.rstrip("Z")
+
+            historcal_df = self.get_all_odds(
+                                sport = sport,
+                                market = market,
+                                historical_event = True, 
+                                date = date_part, 
+                                hour_of_day = time_part,
+                                get_event_prior_to_commence = True,
+                                custoff_date = next_day_at_8am
+                            )
+
+        
+
+        
         
             
         

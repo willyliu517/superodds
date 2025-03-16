@@ -6,8 +6,8 @@ import yaml
 import math
 import numpy as np
 from typing import Dict, List, Tuple
+import os
 from pathlib import Path
-import re
 
 def load_yaml_file(path: str) -> Dict | List | None:
     '''
