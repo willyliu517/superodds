@@ -167,7 +167,7 @@ baseball_player_props:
     batter_first_home_run: 'Batter first home run (Yes/No)'
     batter_hits: 'Batter hits (Over/Under)'
     batter_total_bases: 'Batter total bases (Over/Under)'
-    batter_rbis_batter: 'RBIs (Over/Under)'
+    batter_rbis: 'RBIs (Over/Under)'
     batter_runs_scored: 'Batter runs scored (Over/Under)'
     batter_hits_runs_rbis: 'Batter hits + runs + RBIs (Over/Under)'
     batter_singles: 'Batter singles (Over/Under)'
